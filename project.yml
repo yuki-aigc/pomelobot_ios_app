@@ -1,0 +1,27 @@
+name: PomeloBot
+options:
+  bundleIdPrefix: com.pomelobot
+  deploymentTarget:
+    iOS: "26.0"
+  xcodeVersion: "26.0"
+  generateEmptyDirectories: true
+
+settings:
+  base:
+    SWIFT_VERSION: "6.2"
+    TARGETED_DEVICE_FAMILY: "1,2"
+    INFOPLIST_FILE: PomeloBot/Info.plist
+    DEVELOPMENT_TEAM: ""
+
+targets:
+  PomeloBot:
+    type: application
+    platform: iOS
+    sources:
+      - path: PomeloBot
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.pomelobot.app
+        INFOPLIST_FILE: PomeloBot/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
