@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 import Combine
 
 // MARK: - Connection State
@@ -74,11 +75,6 @@ final class WebSocketService: ObservableObject {
     
     init() {
         encoder.outputFormatting = .sortedKeys
-    }
-    
-    deinit {
-        pingTimer?.invalidate()
-        reconnectTimer?.invalidate()
     }
     
     // MARK: - Public API

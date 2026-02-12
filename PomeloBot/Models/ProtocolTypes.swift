@@ -4,7 +4,7 @@ import Foundation
 
 /// 客户端发送的 hello 握手消息
 struct ClientHelloPayload: Codable {
-    let type: String = "hello"
+    private(set) var type: String = "hello"
     var token: String?
     var clientId: String?
     var userId: String?
@@ -37,7 +37,7 @@ struct ClientHelloPayload: Codable {
 
 /// 客户端发送的聊天消息
 struct ClientMessagePayload: Codable {
-    let type: String = "message"
+    private(set) var type: String = "message"
     var messageId: String?
     var idempotencyKey: String?
     var timestamp: Int?
@@ -72,7 +72,7 @@ struct ClientMessagePayload: Codable {
 
 /// 客户端发送的心跳 ping
 struct ClientPingPayload: Codable {
-    let type: String = "ping"
+    private(set) var type: String = "ping"
     var timestamp: Int?
     
     init() {

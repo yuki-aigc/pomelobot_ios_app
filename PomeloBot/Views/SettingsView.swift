@@ -14,7 +14,7 @@ struct SettingsView: View {
                     HStack {
                         Label("主机", systemImage: "server.rack")
                         Spacer()
-                        TextField("192.168.1.100", text: $settings.serverHost)
+                        TextField("192.168.202.159", text: $settings.serverHost)
                             .textFieldStyle(.plain)
                             .multilineTextAlignment(.trailing)
                             .textInputAutocapitalization(.never)

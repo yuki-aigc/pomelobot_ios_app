@@ -1,73 +1,74 @@
 import SwiftUI
 
-/// 聊天主界面 - iOS 26 Liquid Glass
+/// 聊天主界面
 struct ChatView: View {
     @ObservedObject var viewModel: ChatViewModel
     @FocusState private var isInputFocused: Bool
     @State private var showConversationList = false
     
     var body: some View {
-        GlassEffectContainer {
-            VStack(spacing: 0) {
-                // 连接状态栏 (Liquid Glass)
-                ConnectionStatusView(
-                    state: viewModel.wsService.connectionState,
-                    onConnect: { viewModel.connect() },
-                    onDisconnect: { viewModel.disconnect() }
-                )
-                
-                // 消息列表
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(spacing: 14) {
-                            ForEach(viewModel.messages) { message in
-                                MessageBubbleView(
-                                    message: message,
-                                    showTimestamp: viewModel.settings.showTimestamps,
-                                    fontSize: viewModel.settings.fontSize
-                                )
-                                .id(message.id)
-                            }
-                            
-                            // Loading 指示器
-                            if viewModel.isLoading {
-                                TypingIndicatorView()
-                                    .id("typing-indicator")
-                            }
+        VStack(spacing: 0) {
+            // 连接状态栏
+            ConnectionStatusView(
+                state: viewModel.wsService.connectionState,
+                onConnect: { viewModel.connect() },
+                onDisconnect: { viewModel.disconnect() }
+            )
+            
+            // 消息列表
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 14) {
+                        ForEach(viewModel.messages) { message in
+                            MessageBubbleView(
+                                message: message,
+                                showTimestamp: viewModel.settings.showTimestamps,
+                                fontSize: viewModel.settings.fontSize,
+                                skipAnimation: viewModel.animatedMessageIds.contains(message.id),
+                                onAnimationDone: {
+                                    viewModel.markAnimationDone(message.id)
+                                }
+                            )
+                            .id(message.id)
                         }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                    }
-                    .onChange(of: viewModel.messages.count) { _, _ in
-                        withAnimation(.easeOut(duration: 0.3)) {
-                            if viewModel.isLoading {
-                                proxy.scrollTo("typing-indicator", anchor: .bottom)
-                            } else if let last = viewModel.messages.last {
-                                proxy.scrollTo(last.id, anchor: .bottom)
-                            }
+                        
+                        if viewModel.isLoading {
+                            TypingIndicatorView()
+                                .id("typing-indicator")
                         }
                     }
-                    .onChange(of: viewModel.isLoading) { _, loading in
-                        if loading {
-                            withAnimation {
-                                proxy.scrollTo("typing-indicator", anchor: .bottom)
-                            }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                }
+                .onChange(of: viewModel.messages.count) { _, _ in
+                    withAnimation(.easeOut(duration: 0.3)) {
+                        if viewModel.isLoading {
+                            proxy.scrollTo("typing-indicator", anchor: .bottom)
+                        } else if let last = viewModel.messages.last {
+                            proxy.scrollTo(last.id, anchor: .bottom)
                         }
                     }
                 }
-                .onTapGesture {
-                    isInputFocused = false
+                .onChange(of: viewModel.isLoading) { _, loading in
+                    if loading {
+                        withAnimation {
+                            proxy.scrollTo("typing-indicator", anchor: .bottom)
+                        }
+                    }
                 }
-                
-                // 输入栏 (Liquid Glass)
-                InputBarView(
-                    text: $viewModel.inputText,
-                    isConnected: viewModel.wsService.connectionState.isReady,
-                    isLoading: viewModel.isLoading,
-                    isFocused: $isInputFocused,
-                    onSend: { viewModel.sendMessage() }
-                )
             }
+            .onTapGesture {
+                isInputFocused = false
+            }
+            
+            // 输入栏
+            InputBarView(
+                text: $viewModel.inputText,
+                isConnected: viewModel.wsService.connectionState.isReady,
+                isLoading: viewModel.isLoading,
+                isFocused: $isInputFocused,
+                onSend: { viewModel.sendMessage() }
+            )
         }
         .navigationTitle(viewModel.currentConversation.title)
         .navigationBarTitleDisplayMode(.inline)
@@ -98,6 +99,11 @@ struct ChatView: View {
                 }
             }
         }
+        .onAppear {
+            if viewModel.wsService.connectionState == .disconnected {
+                viewModel.connect()
+            }
+        }
         .sheet(isPresented: $showConversationList) {
             ConversationListSheet(
                 conversations: viewModel.conversations,
@@ -115,7 +121,7 @@ struct ChatView: View {
     }
 }
 
-// MARK: - 输入栏 (Liquid Glass)
+// MARK: - 输入栏
 
 struct InputBarView: View {
     @Binding var text: String
@@ -129,61 +135,70 @@ struct InputBarView: View {
     }
     
     var body: some View {
-        HStack(alignment: .bottom, spacing: 10) {
-            // 多行文本输入
-            TextField("输入消息...", text: $text, axis: .vertical)
-                .textFieldStyle(.plain)
-                .lineLimit(1...6)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
-                .focused(isFocused)
-                .disabled(!isConnected)
-                .onSubmit {
-                    if canSend {
-                        onSend()
-                    }
-                }
+        VStack(spacing: 0) {
+            Divider()
             
-            // 发送按钮 - Liquid Glass 圆形
-            Button(action: onSend) {
-                Image(systemName: "arrow.up")
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(canSend ? .white : Color(.systemGray3))
-                    .frame(width: 36, height: 36)
+            HStack(alignment: .bottom, spacing: 10) {
+                // 文本输入
+                TextField("输入消息...", text: $text, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .lineLimit(1...6)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 20))
+                    .focused(isFocused)
+                    .disabled(!isConnected)
+                    .onSubmit {
+                        if canSend { onSend() }
+                    }
+                
+                // 发送按钮
+                Button(action: onSend) {
+                    Image(systemName: "arrow.up.circle.fill")
+                        .font(.system(size: 32))
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(
+                            .white,
+                            canSend ? Color.accentColor : Color(.systemGray4)
+                        )
+                }
+                .disabled(!canSend)
+                .animation(.easeInOut(duration: 0.15), value: canSend)
             }
-            .glassEffect(.regular.interactive().tint(canSend ? .accentColor : .gray), in: .circle)
-            .disabled(!canSend)
-            .animation(.smooth(duration: 0.2), value: canSend)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(.bar)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .glassEffect(in: .rect(cornerRadius: 0))
     }
 }
 
-// MARK: - Typing 指示器 (Liquid Glass)
+// MARK: - Typing 指示器
 
 struct TypingIndicatorView: View {
     @State private var phase = 0.0
     
     var body: some View {
         HStack(alignment: .bottom, spacing: 0) {
-            HStack(spacing: 6) {
-                ForEach(0..<3, id: \.self) { index in
-                    Circle()
-                        .fill(Color(.systemGray3))
-                        .frame(width: 8, height: 8)
-                        .offset(y: phase == Double(index) ? -6 : 0)
+            HStack(spacing: 0) {
+                // Bot 头像占位
+                BotAvatarView()
+                    .padding(.trailing, 8)
+                
+                HStack(spacing: 5) {
+                    ForEach(0..<3, id: \.self) { index in
+                        Circle()
+                            .fill(Color(.systemGray3))
+                            .frame(width: 8, height: 8)
+                            .offset(y: phase == Double(index) ? -6 : 0)
+                    }
                 }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 18))
             }
-            .padding(.horizontal, 18)
-            .padding(.vertical, 14)
-            .glassEffect(in: .capsule)
             
             Spacer()
         }
-        .padding(.leading, 44) // 对齐 bot 头像右侧
         .onAppear {
             withAnimation(.easeInOut(duration: 0.4).repeatForever(autoreverses: true)) {
                 phase = 2.0

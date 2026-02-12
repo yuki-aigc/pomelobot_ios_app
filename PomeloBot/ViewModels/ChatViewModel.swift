@@ -22,7 +22,10 @@ final class ChatViewModel: ObservableObject {
     // MARK: - Internal
     
     private var cancellables = Set<AnyCancellable>()
-    private var pendingMessageIds = Set<String>()
+    /// 记录 outbound messageId → 用户消息的本地 ID 映射
+    private var outboundMessageMap: [String: String] = [:]
+    /// 已完成打字动画的消息 ID 集合
+    @Published var animatedMessageIds: Set<String> = []
     
     // MARK: - Init
     
@@ -41,6 +44,14 @@ final class ChatViewModel: ObservableObject {
     // MARK: - Bindings
     
     private func setupBindings() {
+        // 转发 wsService 状态变化，让 View 能感知连接状态更新
+        wsService.objectWillChange
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
+            }
+            .store(in: &cancellables)
+        
         // AI 回复
         wsService.onReply
             .receive(on: DispatchQueue.main)
@@ -76,7 +87,6 @@ final class ChatViewModel: ObservableObject {
     
     // MARK: - Actions
     
-    /// 连接到服务器
     func connect() {
         wsService.connect(
             host: settings.serverHost,
@@ -90,57 +100,58 @@ final class ChatViewModel: ObservableObject {
         )
     }
     
-    /// 断开连接
     func disconnect() {
         wsService.disconnect()
     }
     
-    /// 发送消息
     func sendMessage() {
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         guard wsService.connectionState.isReady else { return }
         
-        let messageId = "ios-\(Int(Date().timeIntervalSince1970 * 1000))-\(UUID().uuidString.prefix(8))"
+        // 网络消息 ID（发给服务端的）
+        let outboundId = "ios-\(Int(Date().timeIntervalSince1970 * 1000))-\(UUID().uuidString.prefix(8))"
+        // 本地显示 ID（保证唯一，不和回复冲突）
+        let localId = "user-\(outboundId)"
         
-        // 立即添加用户消息到列表
+        // 记录映射: outboundId -> localId
+        outboundMessageMap[outboundId] = localId
+        
         let userMessage = ChatMessage(
-            id: messageId,
+            id: localId,
             text: text,
             isFromUser: true,
             status: .sending
         )
         messages.append(userMessage)
-        pendingMessageIds.insert(messageId)
         inputText = ""
         isLoading = true
         
-        // 发送到服务器
         Task {
             do {
                 try await wsService.sendMessage(
                     text: text,
-                    messageId: messageId,
+                    messageId: outboundId,
                     conversationId: currentConversation.id,
                     senderId: settings.resolvedUserId,
                     senderName: settings.resolvedUserName
                 )
+                // 发送成功，更新为 sent
+                updateMessageStatus(localId: localId, status: .sent)
             } catch {
-                updateMessageStatus(messageId: messageId, status: .error(error.localizedDescription))
+                updateMessageStatus(localId: localId, status: .error(error.localizedDescription))
                 isLoading = false
             }
         }
         
-        // 更新会话
         updateConversation(lastMessage: text)
     }
     
-    /// 切换会话
     func switchConversation(_ conversation: Conversation) {
         currentConversation = conversation
-        messages = [] // 清空消息（实际可持久化）
+        messages = []
+        outboundMessageMap = [:]
         
-        // 重新连接到新会话
         if wsService.connectionState.isReady {
             disconnect()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
@@ -149,7 +160,6 @@ final class ChatViewModel: ObservableObject {
         }
     }
     
-    /// 创建新会话
     func createNewConversation(title: String = "新对话") {
         let conversation = Conversation(
             id: "ios-\(UUID().uuidString.prefix(8))",
@@ -160,9 +170,15 @@ final class ChatViewModel: ObservableObject {
         saveConversations()
     }
     
-    /// 清空当前会话消息
     func clearMessages() {
         messages = []
+        outboundMessageMap = [:]
+        animatedMessageIds = []
+    }
+    
+    /// 标记消息动画已完成
+    func markAnimationDone(_ messageId: String) {
+        animatedMessageIds.insert(messageId)
     }
     
     // MARK: - Message Handlers
@@ -170,8 +186,11 @@ final class ChatViewModel: ObservableObject {
     private func handleReply(_ envelope: ServerEnvelope) {
         guard let text = envelope.text, !text.isEmpty else { return }
         
+        // 回复消息用独立 ID，不和用户消息冲突
+        let replyId = "reply-\(envelope.messageId ?? UUID().uuidString)"
+        
         let replyMessage = ChatMessage(
-            id: envelope.messageId ?? UUID().uuidString,
+            id: replyId,
             text: text,
             isFromUser: false,
             title: envelope.title,
@@ -181,10 +200,11 @@ final class ChatViewModel: ObservableObject {
         messages.append(replyMessage)
         isLoading = false
         
-        // 更新对应消息状态
-        if let msgId = envelope.messageId {
-            updateMessageStatus(messageId: msgId, status: .delivered)
-            pendingMessageIds.remove(msgId)
+        // 更新对应用户消息状态为已回复
+        if let outboundId = envelope.messageId,
+           let localId = outboundMessageMap[outboundId] {
+            updateMessageStatus(localId: localId, status: .delivered)
+            outboundMessageMap.removeValue(forKey: outboundId)
         }
         
         updateConversation(lastMessage: text)
@@ -194,7 +214,7 @@ final class ChatViewModel: ObservableObject {
         guard let text = envelope.text, !text.isEmpty else { return }
         
         let proactiveMessage = ChatMessage(
-            id: UUID().uuidString,
+            id: "proactive-\(UUID().uuidString)",
             text: text,
             isFromUser: false,
             isProactive: true,
@@ -207,13 +227,17 @@ final class ChatViewModel: ObservableObject {
     }
     
     private func handleDispatchAck(_ envelope: ServerEnvelope) {
-        guard let msgId = envelope.messageId else { return }
+        guard let outboundId = envelope.messageId,
+              let localId = outboundMessageMap[outboundId] else { return }
         
-        if envelope.status == "ok" || envelope.status == "dispatched" {
-            updateMessageStatus(messageId: msgId, status: .waitingReply)
-        } else {
-            updateMessageStatus(messageId: msgId, status: .error(envelope.reason ?? "派发失败"))
+        // 只要 status 不是明确的 error/failed，就认为派发成功
+        let status = envelope.status?.lowercased() ?? ""
+        if status == "error" || status == "failed" || status == "rejected" {
+            updateMessageStatus(localId: localId, status: .error(envelope.reason ?? "派发失败"))
             isLoading = false
+        } else {
+            // ok / dispatched / accepted / 任何非错误状态
+            updateMessageStatus(localId: localId, status: .waitingReply)
         }
     }
     
@@ -221,7 +245,7 @@ final class ChatViewModel: ObservableObject {
         let errorText = envelope.message ?? envelope.code ?? "未知错误"
         
         let errorMessage = ChatMessage(
-            id: UUID().uuidString,
+            id: "error-\(UUID().uuidString)",
             text: "⚠ \(errorText)",
             isFromUser: false,
             status: .error(errorText)
@@ -232,8 +256,8 @@ final class ChatViewModel: ObservableObject {
     
     // MARK: - Helpers
     
-    private func updateMessageStatus(messageId: String, status: MessageStatus) {
-        if let index = messages.firstIndex(where: { $0.id == messageId }) {
+    private func updateMessageStatus(localId: String, status: MessageStatus) {
+        if let index = messages.firstIndex(where: { $0.id == localId }) {
             messages[index].status = status
         }
     }
@@ -248,7 +272,7 @@ final class ChatViewModel: ObservableObject {
         saveConversations()
     }
     
-    // MARK: - Persistence (Simple UserDefaults)
+    // MARK: - Persistence
     
     private func loadConversations() {
         if let data = UserDefaults.standard.data(forKey: "conversations"),

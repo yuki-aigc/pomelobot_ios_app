@@ -1,6 +1,7 @@
 import UIKit
 
 /// 触觉反馈管理
+@MainActor
 enum HapticManager {
     
     static func impact(_ style: UIImpactFeedbackGenerator.FeedbackStyle = .light) {

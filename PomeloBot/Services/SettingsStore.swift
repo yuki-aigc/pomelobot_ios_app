@@ -2,13 +2,14 @@ import Foundation
 import SwiftUI
 
 /// 用户设置持久化存储
+@MainActor
 final class SettingsStore: ObservableObject {
     
     static let shared = SettingsStore()
     
     // MARK: - Server Config
     
-    @AppStorage("server_host") var serverHost: String = "192.168.1.100"
+    @AppStorage("server_host") var serverHost: String = "192.168.202.159"
     @AppStorage("server_port") var serverPort: Int = 18080
     @AppStorage("server_path") var serverPath: String = "/ws/ios"
     @AppStorage("server_use_tls") var useTLS: Bool = false

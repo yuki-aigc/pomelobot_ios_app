@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 连接状态指示栏 - iOS 26 Liquid Glass
+/// 连接状态指示栏
 struct ConnectionStatusView: View {
     let state: ConnectionState
     let onConnect: () -> Void
@@ -35,7 +35,7 @@ struct ConnectionStatusView: View {
             
             Spacer()
             
-            // 操作按钮 - Liquid Glass 胶囊
+            // 操作按钮
             Button {
                 if state.isReady {
                     onDisconnect()
@@ -48,19 +48,17 @@ struct ConnectionStatusView: View {
                     .foregroundStyle(state.isReady ? .red : Color.accentColor)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 6)
+                    .background(
+                        (state.isReady ? Color.red : Color.accentColor).opacity(0.12),
+                        in: Capsule()
+                    )
             }
-            .glassEffect(
-                .regular.interactive().tint(state.isReady ? .red : .accentColor),
-                in: .capsule
-            )
             .disabled(state == .connecting || state == .authenticating)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
-        .glassEffect(in: .rect(cornerRadius: 0))
+        .background(.bar)
     }
-    
-    // MARK: - Helpers
     
     private var statusColor: Color {
         switch state {
