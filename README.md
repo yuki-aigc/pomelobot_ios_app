@@ -2,6 +2,10 @@
 
 PomeloBot 的 iOS 原生客户端，使用 SwiftUI 构建，通过 WebSocket 协议与 PomeloBot 后端通信。
 
+<p align="center">
+  <img src="docs/tmp.png" width="300" alt="PomeloBot iOS App 示例截图" />
+</p>
+
 ## 架构
 
 ```
